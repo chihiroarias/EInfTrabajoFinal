@@ -240,7 +240,7 @@ cat("\n--- Pares de Variables Altamente Correlacionadas (|r| > 0.7) ---\n")
 high_cor <- which(abs(correlation_matrix) > 0.7 & abs(correlation_matrix) < 1, arr.ind = TRUE)
 if(nrow(high_cor) > 0) {
   high_cor_unique <- high_cor[high_cor[,1] < high_cor[,2], , drop = FALSE]
-  for(i in 1:nrow(high_cor_unique)) {
+  for(i in seq_len(nrow(high_cor_unique))) {
     var1 <- rownames(correlation_matrix)[high_cor_unique[i,1]]
     var2 <- colnames(correlation_matrix)[high_cor_unique[i,2]]
     cor_val <- correlation_matrix[high_cor_unique[i,1], high_cor_unique[i,2]]
@@ -354,25 +354,60 @@ g_hist <- do.call(grid.arrange, c(plot_list_hist, ncol = 4))
 ggsave("wine_histograms.png", g_hist, width = 14, height = 10, dpi = 300)
 
 # ------------------------------------------------------------------------------
-# 12. VISUALIZACIONES - QQ PLOTS
+# 12. VISUALIZACIONES - QQ PLOTS PARA EVALUACIÓN DE NORMALIDAD
 # ------------------------------------------------------------------------------
 
 plot_qq <- list()
 
 for(var in numeric_cols) {
+  # Obtener resultado de normalidad para la variable
+  norm_result <- normality_results %>% 
+    filter(Variable == var) %>% 
+    pull(Normal)
+  
   p <- ggplot(wine_data, aes(sample = .data[[var]])) +
-    stat_qq(color = "#6B4E71", alpha = 0.6) +
-    stat_qq_line(color = "black", linewidth = 1) +
+    stat_qq(color = "#6B4E71", alpha = 0.6, size = 0.8) +
+    stat_qq_line(color = "red", linewidth = 1, linetype = "dashed") +
     labs(title = paste("QQ Plot:", var),
+         subtitle = paste("Normalidad:", norm_result),
          x = "Cuantiles teóricos (normal estándar)",
          y = "Cuantiles de la muestra") +
-    theme_minimal(base_size = 9)
+    theme_minimal(base_size = 9) +
+    theme(plot.subtitle = element_text(size = 7, color = "darkred"))
   
   plot_qq[[var]] <- p
 }
 
 g_qq <- do.call(grid.arrange, c(plot_qq, ncol = 4))
 ggsave("wine_qqplots.png", g_qq, width = 14, height = 10, dpi = 300)
+
+# QQ Plots individuales para variables clave en el análisis de normalidad
+cat("\nGenerando QQ plots individuales para variables clave...\n")
+
+key_vars_normality <- c("alcohol", "pH", "density", "residual.sugar", 
+                        "chlorides", "free.sulfur.dioxide")
+
+for(var in key_vars_normality) {
+  norm_stat <- normality_results %>% filter(Variable == var)
+  
+  p_individual <- ggplot(wine_data, aes(sample = .data[[var]])) +
+    stat_qq(color = "#6B4E71", alpha = 0.5, size = 1.5) +
+    stat_qq_line(color = "red", linewidth = 1.5, linetype = "dashed") +
+    labs(title = paste("QQ Plot:", var),
+         subtitle = sprintf("Shapiro-Wilk: W = %.4f, p < 0.001\nDistribución: %s",
+                            norm_stat$W_statistic, norm_stat$Normal),
+         x = "Cuantiles Teóricos (Distribución Normal Estándar)",
+         y = "Cuantiles de la Muestra") +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.title = element_text(face = "bold", size = 16),
+      plot.subtitle = element_text(size = 11, color = "darkred"),
+      axis.title = element_text(size = 12)
+    )
+  
+  ggsave(paste0("qqplot_individual_", var, ".png"), 
+         p_individual, width = 8, height = 6, dpi = 300)
+}
 
 # ------------------------------------------------------------------------------
 # 13. VISUALIZACIONES - BOXPLOTS
@@ -402,6 +437,9 @@ ggsave("wine_boxplots.png", g_box, width = 14, height = 10, dpi = 300)
 # 14. VISUALIZACIONES - MATRIZ DE CORRELACIÓN
 # ------------------------------------------------------------------------------
 
+cat("\n=== GENERANDO MATRICES DE CORRELACIÓN ===\n")
+
+# Matriz de correlación con coeficientes numéricos (método color)
 png("correlation_matrix.png", width = 2000, height = 2000, res = 300, type = "cairo")
 corrplot(correlation_matrix, 
          method = "color",
@@ -416,6 +454,22 @@ corrplot(correlation_matrix,
          mar = c(0,3,2,0))
 title(main = "Matriz de Correlación - Wine Quality Dataset", cex.main = 1.5)
 dev.off()
+cat("Generado: correlation_matrix.png (con coeficientes numéricos)\n")
+
+# Matriz de correlación con círculos (visualización alternativa)
+png("correlation_matrix_circles.png", width = 2000, height = 2000, res = 300, type = "cairo")
+corrplot(correlation_matrix, 
+         method = "circle", 
+         type = "lower",
+         tl.col = "black", 
+         tl.srt = 45,
+         tl.cex = 1.2,
+         cl.cex = 1,
+         col = colorRampPalette(c("red", "white", "blue"))(200),
+         mar = c(0,3,2,0))
+title(main = "Matriz de Correlación - Wine Quality Dataset (Círculos)", cex.main = 1.5)
+dev.off()
+cat("Generado: correlation_matrix_circles.png (visualización con círculos)\n")
 
 # ------------------------------------------------------------------------------
 # 15. VISUALIZACIONES - QUALITY DISTRIBUTION
@@ -462,21 +516,34 @@ for(var in top_vars) {
 dev.off()
 
 # ------------------------------------------------------------------------------
-# 17. VISUALIZACIONES - BOXPLOTS POR QUALITY
+# 17. VISUALIZACIONES - BOXPLOTS POR TYPE (RED VS WHITE)
 # ------------------------------------------------------------------------------
 
-png("wine_boxplots_by_quality.png", width = 2100, height = 1400, res = 150)
+png("wine_boxplots_by_type.png", width = 2100, height = 1400, res = 150)
 par(mfrow = c(3, 4))
-for(col in numeric_cols) {
-  if(col != "quality") {
-    boxplot(wine_data[[col]] ~ wine_data$quality,
-            main = paste(col, "por Quality"),
-            xlab = "Quality Score",
-            ylab = col,
-            col = rainbow(length(unique(wine_data$quality))),
-            border = "black")
-  }
+
+# Solo usar las 11 variables numéricas (excluyendo quality)
+vars_for_type_comparison <- numeric_cols[numeric_cols != "quality"]
+
+for(col in vars_for_type_comparison) {
+  boxplot(wine_data[[col]] ~ wine_data$type,
+          main = paste("Boxplot:", col),
+          xlab = "Wine Type",
+          ylab = col,
+          col = c("red" = "#C0504D", "white" = "#9BBB59"),
+          border = "black",
+          names = c("Red", "White"))
 }
+
+# Agregar el boxplot de quality comparado por type
+boxplot(wine_data$quality ~ wine_data$type,
+        main = "Boxplot: type",
+        xlab = "Wine Type",
+        ylab = "Quality Score",
+        col = c("red" = "#C0504D", "white" = "#9BBB59"),
+        border = "black",
+        names = c("Red", "White"))
+
 dev.off()
 
 # ------------------------------------------------------------------------------
@@ -546,7 +613,7 @@ cat("   - Más frecuente:", names(which.max(quality_freq)),
 
 cat("\n3. TOP 5 CORRELACIONES CON QUALITY:\n")
 top_cor_quality <- sort(correlation_matrix[, "quality"], decreasing = TRUE)[2:6]
-for(i in 1:length(top_cor_quality)) {
+for(i in seq_along(top_cor_quality)) {
   cat(sprintf("   - %s: r = %.3f\n", names(top_cor_quality)[i], top_cor_quality[i]))
 }
 
@@ -570,10 +637,11 @@ cat("\n   PNG:\n")
 cat("   - wine_histograms.png\n")
 cat("   - wine_qqplots.png\n")
 cat("   - wine_boxplots.png\n")
-cat("   - correlation_matrix.png\n")
+cat("   - correlation_matrix.png (con coeficientes)\n")
+cat("   - correlation_matrix_circles.png (con círculos)\n")
 cat("   - quality_distribution.png\n")
 cat("   - wine_scatter_quality.png\n")
-cat("   - wine_boxplots_by_quality.png\n")
+cat("   - wine_boxplots_by_type.png (RED vs WHITE comparison)\n")
 
 cat("\n", rep("=", 80), "\n", sep = "")
 cat("ANÁLISIS COMPLETADO EXITOSAMENTE\n")
