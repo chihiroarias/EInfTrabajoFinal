@@ -123,7 +123,6 @@ tukey_T <- run_tukey_sig(subT, quimicas, anova_T)
 say("\n=== B3.bis Tukey HSD — BLANCOS ===")
 tukey_B <- run_tukey_sig(subB, quimicas, anova_B)
 
-
 # ============================================================
 # 6. BOXPLOTS PARA VISUALIZAR DIFERENCIAS
 # ============================================================
@@ -147,10 +146,3 @@ print(plot_box(subT, "Propiedades químicas según calidad — Tintos"))
 
 say("\n=== B4.bis Graficando diferencias — BLANCOS ===")
 print(plot_box(subB, "Propiedades químicas según calidad — Blancos"))
-
-
-
-
-
-
-

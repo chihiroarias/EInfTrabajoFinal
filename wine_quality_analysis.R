@@ -256,6 +256,7 @@ cat("\n=== ANOVA - Diferencias por Nivel de Quality ===\n")
 
 anova_results <- data.frame(
   Variable = character(),
+  df = numeric(),
   F_statistic = numeric(),
   p_value = numeric(),
   Significant = character(),
@@ -267,12 +268,14 @@ for(col in numeric_cols) {
     formula <- as.formula(paste(col, "~ factor(quality)"))
     anova_test <- aov(formula, data = wine_data)
     anova_summary <- summary(anova_test)
+    df_residual <- anova_summary[[1]]$Df[2]  # Grados de libertad residuales
     f_stat <- anova_summary[[1]]$`F value`[1]
     p_val <- anova_summary[[1]]$`Pr(>F)`[1]
     
     anova_results <- rbind(anova_results,
                            data.frame(
                              Variable = col,
+                             df = df_residual,
                              F_statistic = f_stat,
                              p_value = p_val,
                              Significant = ifelse(p_val < 0.05, "Sí (p<0.05)", "No")
